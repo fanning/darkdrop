@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: darkdrop-api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - JWT_SECRET=${JWT_SECRET}
+      - STORAGE_ROOT=/var/darkdrop
+    volumes:
+      - ./database:/app/database
+      - darkdrop-storage:/var/darkdrop
+    networks:
+      - darkdrop
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: darkdrop-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+    networks:
+      - darkdrop
+
+  nginx:
+    image: nginx:alpine
+    container_name: darkdrop-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./frontend/dist:/usr/share/nginx/html
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - api
+      - frontend
+    networks:
+      - darkdrop
+
+volumes:
+  darkdrop-storage:
+    driver: local
+
+networks:
+  darkdrop:
+    driver: bridge

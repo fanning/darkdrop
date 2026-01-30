@@ -1,0 +1,10 @@
+{
+  "name": "darkdrop-database",
+  "version": "1.0.0",
+  "description": "DarkDrop database module",
+  "main": "index.js",
+  "dependencies": {
+    "sqlite3": "^5.1.6",
+    "sqlite": "^5.1.1"
+  }
+}
