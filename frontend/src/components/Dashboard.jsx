@@ -8,7 +8,10 @@ function Dashboard({ user, accounts, onLogout }) {
     <div>
       <header className="header">
         <div className="header-content">
-          <h1>DarkDrop</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <img src="/logo-hat-white.png" alt="Dark Logo" style={{ height: '40px' }} />
+            <h1>DarkDrop</h1>
+          </div>
           <div className="header-actions">
             <span style={{ color: '#888' }}>{user?.name}</span>
             <button className="btn btn-secondary" onClick={onLogout}>

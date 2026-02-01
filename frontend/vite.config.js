@@ -6,7 +6,27 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': {
+      '/auth': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+      '/files': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+      '/upload': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+      '/download': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+      '/accounts': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+      '/public': {
         target: 'http://localhost:3000',
         changeOrigin: true,
       },

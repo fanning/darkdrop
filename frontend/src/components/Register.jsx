@@ -49,9 +49,20 @@ function Register() {
     <div className="container">
       <div style={{ maxWidth: '400px', margin: '100px auto' }}>
         <div className="card">
-          <h1 style={{ marginBottom: '30px', textAlign: 'center' }}>
-            DarkDrop Registration
-          </h1>
+          {/* Dark Logo */}
+          <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+            <img
+              src="/logo-hat-white.png"
+              alt="Dark Logo"
+              style={{ height: '60px', marginBottom: '10px' }}
+            />
+            <h1 style={{ marginBottom: '10px', marginTop: '10px' }}>
+              DarkDrop
+            </h1>
+            <p style={{ color: '#888', fontSize: '14px', margin: 0 }}>
+              Create Your Account
+            </p>
+          </div>
 
           {error && <div className="error">{error}</div>}
           {success && <div className="success">{success}</div>}

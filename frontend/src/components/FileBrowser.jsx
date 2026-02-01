@@ -166,7 +166,10 @@ function FileBrowser({ user, accounts, token, onLogout }) {
     <div>
       <header className="header">
         <div className="header-content">
-          <h1>DarkDrop - {account.name}</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <img src="/logo-hat-white.png" alt="Dark Logo" style={{ height: '40px' }} />
+            <h1>DarkDrop - {account.name}</h1>
+          </div>
           <div className="header-actions">
             <button className="btn btn-secondary" onClick={() => navigate('/dashboard')}>
               Back to Dashboard
