@@ -4,7 +4,7 @@
 
 ```
 Development: http://localhost:3000
-Production: https://darkdrop.hiveskill.com
+Production: https://darkdrop.com
 ```
 
 ## Authentication
@@ -15,7 +15,7 @@ DarkDrop supports two authentication methods:
 
 ```bash
 # Login to get token
-curl -X POST https://darkdrop.hiveskill.com/auth/login \
+curl -X POST https://darkdrop.com/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"password123"}'
 
@@ -38,14 +38,14 @@ curl -X POST https://darkdrop.hiveskill.com/auth/login \
 }
 
 # Use token in requests
-curl -H "Authorization: Bearer abc123..." https://darkdrop.hiveskill.com/files/custcorp
+curl -H "Authorization: Bearer abc123..." https://darkdrop.com/files/custcorp
 ```
 
 ### 2. API Key (for agents)
 
 ```bash
 # Use API key in header
-curl -H "x-api-key: your-api-key-here" https://darkdrop.hiveskill.com/files/custcorp
+curl -H "x-api-key: your-api-key-here" https://darkdrop.com/files/custcorp
 ```
 
 ---
@@ -195,7 +195,7 @@ Content-Type: multipart/form-data
 
 **Example**:
 ```bash
-curl -X POST https://darkdrop.hiveskill.com/upload/custcorp \
+curl -X POST https://darkdrop.com/upload/custcorp \
   -H "Authorization: Bearer {token}" \
   -F "file=@document.pdf" \
   -F "type=users" \
@@ -227,7 +227,7 @@ x-api-key: {api-key}
 **Example**:
 ```bash
 curl -H "Authorization: Bearer {token}" \
-  https://darkdrop.hiveskill.com/download/file-id \
+  https://darkdrop.com/download/file-id \
   -o downloaded-file.pdf
 ```
 
@@ -322,7 +322,7 @@ x-api-key: {api-key}
 **Response**:
 ```json
 {
-  "publicUrl": "https://darkdrop.hiveskill.com/public/abc123",
+  "publicUrl": "https://darkdrop.com/public/abc123",
   "token": "abc123"
 }
 ```
@@ -341,7 +341,7 @@ GET /public/:token
 
 **Example**:
 ```bash
-curl https://darkdrop.hiveskill.com/public/abc123 -o file.pdf
+curl https://darkdrop.com/public/abc123 -o file.pdf
 ```
 
 ---

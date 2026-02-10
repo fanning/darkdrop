@@ -5,8 +5,8 @@
 **DarkDrop** is a multi-tenant file storage service designed for secure file management across multiple brands and organizations. It provides dual access: a web interface for humans and API/MCP integration for AI agents.
 
 **Location**: `/home/fanning/darkdrop/`
-**Domain**: `darkdrop.hiveskill.com`
-**Status**: Development (Not yet deployed)
+**Domain**: `darkdrop.com`
+**Status**: Live
 
 ---
 
@@ -18,20 +18,30 @@
    - Express.js REST API
    - JWT and API key authentication
    - File upload/download with streaming
-   - Port: 3000
+   - Port: 3001
 
 2. **Frontend** (`/frontend`)
    - React + Vite SPA
    - File browser interface
    - Account management
-   - Port: 5173 (dev), served by Nginx (prod)
+   - Deployed on Netlify (darkdrop.com)
 
-3. **MCP Server** (`/mcp-server`)
+3. **Coordinator** (`~/darkdrop-coordinator/`)
+   - AI agent with persistent ChatCan memory
+   - Darkcall WebSocket integration
+   - Port: 3020
+
+4. **RAG Service** (`~/darkdrop-rag/`)
+   - FastAPI + ChromaDB
+   - Project-specific knowledge base
+   - Port: 8090
+
+5. **MCP Server** (`/mcp-server`)
    - Model Context Protocol integration
    - Stdio transport for Claude Code
    - Six file management tools
 
-4. **Database** (`/database`)
+6. **Database** (`/database`)
    - SQLite with 7 tables
    - Multi-tenant data model
    - Access control system
@@ -197,12 +207,8 @@ Located in `/scripts`:
 
 ## Development Status
 
-**Current Phase**: Initial implementation complete
-**Next Steps**:
-1. Test all API endpoints
-2. Test MCP server integration
-3. Deploy to darkdrop.hiveskill.com
-4. Create first accounts and test users
+**Current Phase**: Live and operational
+**Services**: darkdrop-api (3001), darkdrop-coordinator (3020), darkdrop-service (3120), darkdrop-rag (8090)
 
 ---
 
@@ -286,5 +292,5 @@ sudo chmod -R 755 /var/darkdrop
 
 ---
 
-**Last Updated**: 2026-01-30
+**Last Updated**: 2026-02-10
 **Current Version**: 1.0.0
