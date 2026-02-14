@@ -16,6 +16,7 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3001,
         STORAGE_ROOT: '/var/darkdrop',
+        DARKDROP_MASTER_KEY: 'f0963b315dcee8beb3e8e9cc8f67f9c288087ec2c301b74f83b7a38d76f412b4',
       },
       max_restarts: 10,
       min_uptime: '10s',

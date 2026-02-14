@@ -236,6 +236,80 @@ class Database {
     async cleanExpiredSessions() {
         return await this.db.run("DELETE FROM sessions WHERE expires_at < datetime('now')");
     }
+
+    // File version methods
+    async createFileVersion(version) {
+        return await this.db.run(
+            `INSERT INTO file_versions (id, file_id, version_number, path, size, checksum, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            version.id, version.fileId, version.versionNumber, version.path, version.size,
+            version.checksum, version.createdBy
+        );
+    }
+
+    async getFileVersions(fileId) {
+        return await this.db.all(
+            'SELECT * FROM file_versions WHERE file_id = ? ORDER BY version_number DESC',
+            fileId
+        );
+    }
+
+    async getFileVersion(versionId) {
+        return await this.db.get('SELECT * FROM file_versions WHERE id = ?', versionId);
+    }
+
+    async getMaxVersionNumber(fileId) {
+        const result = await this.db.get(
+            'SELECT MAX(version_number) as max_version FROM file_versions WHERE file_id = ?',
+            fileId
+        );
+        return result?.max_version || 0;
+    }
+
+    // Audit log methods
+    async createAuditLog(entry) {
+        return await this.db.run(
+            `INSERT INTO file_audit_log (id, file_id, account_id, action, performed_by, performed_by_type, ip_address, user_agent)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            entry.id, entry.fileId, entry.accountId, entry.action, entry.performedBy,
+            entry.performedByType, entry.ipAddress, entry.userAgent
+        );
+    }
+
+    async getFileAuditLog(fileId) {
+        return await this.db.all(
+            'SELECT * FROM file_audit_log WHERE file_id = ? ORDER BY created_at DESC',
+            fileId
+        );
+    }
+
+    // Retention policy methods
+    async createRetentionPolicy(policy) {
+        return await this.db.run(
+            'INSERT INTO retention_policies (id, account_id, category, retention_days) VALUES (?, ?, ?, ?)',
+            policy.id, policy.accountId, policy.category, policy.retentionDays
+        );
+    }
+
+    async getRetentionPolicies(accountId) {
+        return await this.db.all(
+            'SELECT * FROM retention_policies WHERE account_id = ?',
+            accountId
+        );
+    }
+
+    // Generic query helpers (used by sync API)
+    async run(sql, params) {
+        return await this.db.run(sql, params);
+    }
+
+    async get(sql, params) {
+        return await this.db.get(sql, params);
+    }
+
+    async all(sql, params) {
+        return await this.db.all(sql, params);
+    }
 }
 
 module.exports = Database;

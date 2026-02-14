@@ -7,6 +7,8 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const Database = require('../database');
+const ErrorHandler = require('./error-handler');
+const { encrypt, decrypt, getAccountKey } = require('../lib/crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -154,8 +156,8 @@ app.post('/auth/register', async (req, res) => {
 
         res.status(201).json({ message: 'User created successfully', userId });
     } catch (error) {
-        console.error('Registration error:', error);
-        res.status(500).json({ error: 'Registration failed' });
+        const errorResponse = ErrorHandler.handle(error, 'User registration');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0], messages: errorResponse.messages });
     }
 });
 
@@ -204,8 +206,8 @@ app.post('/auth/login', async (req, res) => {
             }))
         });
     } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ error: 'Login failed' });
+        const errorResponse = ErrorHandler.handle(error, 'User login');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0], messages: errorResponse.messages });
     }
 });
 
@@ -215,8 +217,8 @@ app.post('/auth/logout', authenticateJWT, async (req, res) => {
         await db.deleteSession(token);
         res.json({ message: 'Logged out successfully' });
     } catch (error) {
-        console.error('Logout error:', error);
-        res.status(500).json({ error: 'Logout failed' });
+        const errorResponse = ErrorHandler.handle(error, 'User logout');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0], messages: errorResponse.messages });
     }
 });
 
@@ -239,8 +241,8 @@ app.get('/accounts', authenticate, async (req, res) => {
             }))
         });
     } catch (error) {
-        console.error('Get accounts error:', error);
-        res.status(500).json({ error: 'Failed to fetch accounts' });
+        const errorResponse = ErrorHandler.handle(error, 'Fetch accounts');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0], messages: errorResponse.messages });
     }
 });
 
@@ -249,8 +251,8 @@ app.get('/accounts/:accountId', authenticate, checkAccountAccess('read'), async 
         const account = await db.getAccount(req.accountId);
         res.json(account);
     } catch (error) {
-        console.error('Get account error:', error);
-        res.status(500).json({ error: 'Failed to fetch account' });
+        const errorResponse = ErrorHandler.handle(error, 'Fetch account');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0], messages: errorResponse.messages });
     }
 });
 
@@ -276,11 +278,75 @@ app.post('/upload/:accountId', authenticate, checkAccountAccess('write'), async 
             }
 
             try {
-                // Calculate checksum
-                const fileBuffer = await fs.readFile(req.file.path);
+                // Calculate checksum on original data
+                let fileBuffer = await fs.readFile(req.file.path);
                 const checksum = crypto.createHash('sha256').update(fileBuffer).digest('hex');
 
-                // Create file record
+                // Check if account has encryption enabled
+                const account = await db.getAccount(req.accountId);
+                let finalSize = req.file.size;
+                if (account && account.encryption_enabled) {
+                    const encKey = getAccountKey(req.accountId);
+                    if (encKey) {
+                        const encryptedData = encrypt(fileBuffer, encKey);
+                        await fs.writeFile(req.file.path, encryptedData);
+                        finalSize = encryptedData.length;
+                    }
+                }
+
+                // Check for existing file with same name/folder for versioning
+                const existingFiles = await db.listFiles(req.accountId, folder, type);
+                const existingFile = existingFiles.find(f => f.original_name === req.file.originalname);
+
+                if (existingFile) {
+                    // Move existing file to versions
+                    const versionNumber = await db.getMaxVersionNumber(existingFile.id) + 1;
+                    const versionId = crypto.randomUUID();
+                    await db.createFileVersion({
+                        id: versionId,
+                        fileId: existingFile.id,
+                        versionNumber,
+                        path: existingFile.path,
+                        size: existingFile.size,
+                        checksum: existingFile.checksum || '',
+                        createdBy: req.user?.id || req.agent?.id || null
+                    });
+
+                    // Update existing file record with new data
+                    await db.run(
+                        `UPDATE files SET name = ?, path = ?, size = ?, mime_type = ?, checksum = ?,
+                         uploaded_by_user_id = ?, uploaded_by_agent_id = ?, updated_at = CURRENT_TIMESTAMP
+                         WHERE id = ?`,
+                        [req.file.filename, req.file.path, finalSize, req.file.mimetype, checksum,
+                         req.user?.id || null, req.agent?.id || null, existingFile.id]
+                    );
+
+                    // Audit log for version creation
+                    await db.createAuditLog({
+                        id: crypto.randomUUID(),
+                        fileId: existingFile.id,
+                        accountId: req.accountId,
+                        action: 'version_create',
+                        performedBy: req.user?.id || req.agent?.id || 'unknown',
+                        performedByType: req.user ? 'user' : 'agent',
+                        ipAddress: req.ip,
+                        userAgent: req.headers['user-agent'] || null
+                    });
+
+                    await db.updateAccountStorage(req.accountId, finalSize);
+
+                    return res.status(201).json({
+                        fileId: existingFile.id,
+                        name: req.file.originalname,
+                        size: finalSize,
+                        mimeType: req.file.mimetype,
+                        checksum,
+                        versioned: true,
+                        versionNumber
+                    });
+                }
+
+                // Create new file record
                 const fileId = crypto.randomUUID();
                 await db.createFile({
                     id: fileId,
@@ -288,7 +354,7 @@ app.post('/upload/:accountId', authenticate, checkAccountAccess('write'), async 
                     name: req.file.filename,
                     originalName: req.file.originalname,
                     path: req.file.path,
-                    size: req.file.size,
+                    size: finalSize,
                     mimeType: req.file.mimetype,
                     type,
                     uploadedByUserId: req.user?.id || null,
@@ -297,13 +363,25 @@ app.post('/upload/:accountId', authenticate, checkAccountAccess('write'), async 
                     checksum
                 });
 
+                // Audit log for upload
+                await db.createAuditLog({
+                    id: crypto.randomUUID(),
+                    fileId,
+                    accountId: req.accountId,
+                    action: 'upload',
+                    performedBy: req.user?.id || req.agent?.id || 'unknown',
+                    performedByType: req.user ? 'user' : 'agent',
+                    ipAddress: req.ip,
+                    userAgent: req.headers['user-agent'] || null
+                });
+
                 // Update account storage
-                await db.updateAccountStorage(req.accountId, req.file.size);
+                await db.updateAccountStorage(req.accountId, finalSize);
 
                 res.status(201).json({
                     fileId,
                     name: req.file.originalname,
-                    size: req.file.size,
+                    size: finalSize,
                     mimeType: req.file.mimetype,
                     checksum
                 });
@@ -314,8 +392,8 @@ app.post('/upload/:accountId', authenticate, checkAccountAccess('write'), async 
             }
         });
     } catch (error) {
-        console.error('Upload error:', error);
-        res.status(500).json({ error: 'Upload failed' });
+        const errorResponse = ErrorHandler.handle(error, 'File upload');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0], messages: errorResponse.messages });
     }
 });
 
@@ -337,10 +415,35 @@ app.get('/download/:fileId', authenticate, async (req, res) => {
 
         await db.incrementDownloadCount(file.id);
 
+        // Audit log for download
+        await db.createAuditLog({
+            id: crypto.randomUUID(),
+            fileId: file.id,
+            accountId: file.account_id,
+            action: 'download',
+            performedBy: userId || agentId || 'unknown',
+            performedByType: userId ? 'user' : 'agent',
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'] || null
+        });
+
+        // Check if account has encryption - decrypt before sending
+        const account = await db.getAccount(file.account_id);
+        if (account && account.encryption_enabled) {
+            const encKey = getAccountKey(file.account_id);
+            if (encKey) {
+                const encryptedData = await fs.readFile(file.path);
+                const decryptedData = decrypt(encryptedData, encKey);
+                res.setHeader('Content-Disposition', `attachment; filename="${file.original_name}"`);
+                res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+                return res.send(decryptedData);
+            }
+        }
+
         res.download(file.path, file.original_name);
     } catch (error) {
-        console.error('Download error:', error);
-        res.status(500).json({ error: 'Download failed' });
+        const errorResponse = ErrorHandler.handle(error, 'File download');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0], messages: errorResponse.messages });
     }
 });
 
@@ -356,8 +459,8 @@ app.get('/public/:token', async (req, res) => {
 
         res.download(file.path, file.original_name);
     } catch (error) {
-        console.error('Public download error:', error);
-        res.status(500).json({ error: 'Download failed' });
+        const errorResponse = ErrorHandler.handle(error, 'Public file download');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0], messages: errorResponse.messages });
     }
 });
 
@@ -383,8 +486,8 @@ app.get('/files/:accountId', authenticate, checkAccountAccess('read'), async (re
             }))
         });
     } catch (error) {
-        console.error('List files error:', error);
-        res.status(500).json({ error: 'Failed to list files' });
+        const errorResponse = ErrorHandler.handle(error, 'List files');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0], messages: errorResponse.messages });
     }
 });
 
@@ -410,8 +513,8 @@ app.get('/files/:accountId/search', authenticate, checkAccountAccess('read'), as
             }))
         });
     } catch (error) {
-        console.error('Search files error:', error);
-        res.status(500).json({ error: 'Search failed' });
+        const errorResponse = ErrorHandler.handle(error, 'File search');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0], messages: errorResponse.messages });
     }
 });
 
@@ -442,8 +545,107 @@ app.delete('/files/:fileId', authenticate, async (req, res) => {
 
         res.json({ message: 'File deleted successfully' });
     } catch (error) {
-        console.error('Delete file error:', error);
-        res.status(500).json({ error: 'Delete failed' });
+        const errorResponse = ErrorHandler.handle(error, 'File deletion');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0], messages: errorResponse.messages });
+    }
+});
+
+// List file versions
+app.get('/files/:fileId/versions', authenticate, async (req, res) => {
+    try {
+        const file = await db.getFile(req.params.fileId);
+        if (!file) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+
+        const userId = req.user?.id;
+        const agentId = req.agent?.id;
+        const hasAccess = await db.checkPermission(file.account_id, userId, agentId, 'read');
+
+        if (!hasAccess) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        const versions = await db.getFileVersions(file.id);
+
+        res.json({
+            fileId: file.id,
+            currentName: file.original_name,
+            versions: versions.map(v => ({
+                id: v.id,
+                versionNumber: v.version_number,
+                size: v.size,
+                checksum: v.checksum,
+                createdBy: v.created_by,
+                createdAt: v.created_at
+            }))
+        });
+    } catch (error) {
+        const errorResponse = ErrorHandler.handle(error, 'List file versions');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0], messages: errorResponse.messages });
+    }
+});
+
+// Restore a file version
+app.post('/files/:fileId/versions/:versionId/restore', authenticate, async (req, res) => {
+    try {
+        const file = await db.getFile(req.params.fileId);
+        if (!file) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+
+        const userId = req.user?.id;
+        const agentId = req.agent?.id;
+        const hasAccess = await db.checkPermission(file.account_id, userId, agentId, 'write');
+
+        if (!hasAccess) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        const version = await db.getFileVersion(req.params.versionId);
+        if (!version || version.file_id !== file.id) {
+            return res.status(404).json({ error: 'Version not found' });
+        }
+
+        // Save current file as a new version before restoring
+        const newVersionNumber = await db.getMaxVersionNumber(file.id) + 1;
+        await db.createFileVersion({
+            id: crypto.randomUUID(),
+            fileId: file.id,
+            versionNumber: newVersionNumber,
+            path: file.path,
+            size: file.size,
+            checksum: file.checksum || '',
+            createdBy: userId || agentId || null
+        });
+
+        // Restore: update file record with version data
+        await db.run(
+            `UPDATE files SET path = ?, size = ?, checksum = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [version.path, version.size, version.checksum, file.id]
+        );
+
+        // Audit log
+        await db.createAuditLog({
+            id: crypto.randomUUID(),
+            fileId: file.id,
+            accountId: file.account_id,
+            action: 'version_create',
+            performedBy: userId || agentId || 'unknown',
+            performedByType: userId ? 'user' : 'agent',
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'] || null
+        });
+
+        res.json({
+            message: 'Version restored successfully',
+            fileId: file.id,
+            restoredVersion: version.version_number,
+            savedAsVersion: newVersionNumber
+        });
+    } catch (error) {
+        const errorResponse = ErrorHandler.handle(error, 'Restore file version');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0], messages: errorResponse.messages });
     }
 });
 
@@ -470,8 +672,172 @@ app.post('/files/:fileId/share', authenticate, async (req, res) => {
 
         res.json({ publicUrl, token: publicToken });
     } catch (error) {
-        console.error('Share file error:', error);
-        res.status(500).json({ error: 'Failed to create share link' });
+        const errorResponse = ErrorHandler.handle(error, 'File sharing');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0], messages: errorResponse.messages });
+    }
+});
+
+// ============================================
+// SYNC API - For Hive Code Electron App
+// ============================================
+
+// Batch sync: accept multiple file uploads with metadata
+app.post('/api/sync/batch', authenticate, upload.array('files', 50), async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        const metadata = JSON.parse(req.body.metadata || '[]');
+        const results = [];
+
+        for (let i = 0; i < (req.files || []).length; i++) {
+            const file = req.files[i];
+            const meta = metadata[i] || {};
+
+            const fileRecord = {
+                id: crypto.randomUUID(),
+                account_id: meta.account_id || req.body.account_id,
+                filename: file.originalname,
+                stored_path: file.path,
+                size: file.size,
+                mime_type: file.mimetype,
+                source_type: meta.source_type || 'document',
+                source_path: meta.source_path || '',
+                content_hash: meta.content_hash || '',
+                encrypted: meta.encrypted || false,
+                parsed_text: meta.parsed_text || '',
+                uploaded_by: userId,
+                created_at: new Date().toISOString()
+            };
+
+            try {
+                await db.run(`INSERT INTO sync_files (id, account_id, filename, stored_path, size, mime_type, source_type, source_path, content_hash, encrypted, parsed_text, uploaded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [fileRecord.id, fileRecord.account_id, fileRecord.filename, fileRecord.stored_path, fileRecord.size, fileRecord.mime_type, fileRecord.source_type, fileRecord.source_path, fileRecord.content_hash, fileRecord.encrypted ? 1 : 0, fileRecord.parsed_text, fileRecord.uploaded_by, fileRecord.created_at]);
+                results.push({ id: fileRecord.id, filename: fileRecord.filename, status: 'synced' });
+            } catch (e) {
+                results.push({ filename: fileRecord.filename, status: 'error', error: e.message });
+            }
+        }
+
+        res.json({ synced: results.filter(r => r.status === 'synced').length, total: results.length, results });
+    } catch (error) {
+        const errorResponse = ErrorHandler.handle(error, 'Batch sync');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0] });
+    }
+});
+
+// Delta sync: check which files need uploading based on hashes
+app.post('/api/sync/delta', authenticate, async (req, res) => {
+    try {
+        const { account_id, files } = req.body; // files: [{ path, hash, mtime }]
+        if (!account_id || !Array.isArray(files)) {
+            return res.status(400).json({ error: 'account_id and files array required' });
+        }
+
+        const existingHashes = new Set();
+        try {
+            const rows = await db.all(`SELECT content_hash FROM sync_files WHERE account_id = ?`, [account_id]);
+            for (const row of rows) {
+                if (row.content_hash) existingHashes.add(row.content_hash);
+            }
+        } catch {
+            // Table may not exist yet
+        }
+
+        const needed = [];
+        const alreadySynced = [];
+        for (const file of files) {
+            if (file.hash && existingHashes.has(file.hash)) {
+                alreadySynced.push(file.path);
+            } else {
+                needed.push(file);
+            }
+        }
+
+        res.json({ needed: needed.length, already_synced: alreadySynced.length, files_to_upload: needed });
+    } catch (error) {
+        const errorResponse = ErrorHandler.handle(error, 'Delta sync');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0] });
+    }
+});
+
+// Sync status for an account
+app.get('/api/sync/status/:accountId', authenticate, async (req, res) => {
+    try {
+        const { accountId } = req.params;
+        let stats = { total_files: 0, total_size: 0, by_type: {} };
+
+        try {
+            const countRow = await db.get(`SELECT COUNT(*) as cnt, COALESCE(SUM(size),0) as total_size FROM sync_files WHERE account_id = ?`, [accountId]);
+            stats.total_files = countRow?.cnt || 0;
+            stats.total_size = countRow?.total_size || 0;
+
+            const typeRows = await db.all(`SELECT source_type, COUNT(*) as cnt FROM sync_files WHERE account_id = ? GROUP BY source_type`, [accountId]);
+            for (const row of typeRows) {
+                stats.by_type[row.source_type] = row.cnt;
+            }
+        } catch {
+            // Table may not exist yet
+        }
+
+        res.json({ account_id: accountId, ...stats, last_checked: new Date().toISOString() });
+    } catch (error) {
+        const errorResponse = ErrorHandler.handle(error, 'Sync status');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0] });
+    }
+});
+
+// User data profile
+app.get('/api/profile/:accountId', authenticate, async (req, res) => {
+    try {
+        const { accountId } = req.params;
+        let profile = { account_id: accountId, file_count: 0, categories: {}, last_sync: null };
+
+        try {
+            const countRow = await db.get(`SELECT COUNT(*) as cnt, MAX(created_at) as last_sync FROM sync_files WHERE account_id = ?`, [accountId]);
+            profile.file_count = countRow?.cnt || 0;
+            profile.last_sync = countRow?.last_sync || null;
+
+            const typeRows = await db.all(`SELECT source_type, COUNT(*) as cnt, COALESCE(SUM(size),0) as total_size FROM sync_files WHERE account_id = ? GROUP BY source_type`, [accountId]);
+            for (const row of typeRows) {
+                profile.categories[row.source_type] = { count: row.cnt, size: row.total_size };
+            }
+        } catch {
+            // Table may not exist
+        }
+
+        res.json(profile);
+    } catch (error) {
+        const errorResponse = ErrorHandler.handle(error, 'Profile');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0] });
+    }
+});
+
+// Semantic search across user's synced data
+app.post('/api/search/semantic', authenticate, async (req, res) => {
+    try {
+        const { query, account_id, limit = 20 } = req.body;
+        if (!query || !account_id) {
+            return res.status(400).json({ error: 'query and account_id required' });
+        }
+
+        // Simple text search (will be enhanced with RAG embedding search later)
+        const searchTerm = `%${query}%`;
+        let results = [];
+        try {
+            results = await db.all(
+                `SELECT id, filename, source_type, source_path, substr(parsed_text, 1, 500) as snippet, created_at
+                 FROM sync_files
+                 WHERE account_id = ? AND (parsed_text LIKE ? OR filename LIKE ?)
+                 ORDER BY created_at DESC LIMIT ?`,
+                [account_id, searchTerm, searchTerm, limit]
+            );
+        } catch {
+            // Table may not exist
+        }
+
+        res.json({ query, results_count: results.length, results });
+    } catch (error) {
+        const errorResponse = ErrorHandler.handle(error, 'Semantic search');
+        res.status(errorResponse.status).json({ error: errorResponse.messages[0] });
     }
 });
 

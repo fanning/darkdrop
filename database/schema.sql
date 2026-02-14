@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS accounts (
     storage_used INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'suspended', 'deleted'))
+    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'suspended', 'deleted')),
+    encryption_enabled INTEGER DEFAULT 0
 );
 
 -- Human users
@@ -64,6 +65,7 @@ CREATE TABLE IF NOT EXISTS files (
     uploaded_by_agent_id TEXT,
     folder TEXT DEFAULT '/',
     checksum TEXT,
+    category TEXT DEFAULT NULL,
     is_public BOOLEAN DEFAULT 0,
     public_token TEXT UNIQUE,
     download_count INTEGER DEFAULT 0,
@@ -96,8 +98,72 @@ CREATE INDEX IF NOT EXISTS idx_files_public_token ON files(public_token);
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
+-- Sync files from Hive Code desktop app
+CREATE TABLE IF NOT EXISTS sync_files (
+    id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    stored_path TEXT NOT NULL,
+    size INTEGER NOT NULL DEFAULT 0,
+    mime_type TEXT,
+    source_type TEXT NOT NULL CHECK(source_type IN ('document', 'browser_history', 'code', 'email', 'chat', 'activity', 'calendar', 'notes')),
+    source_path TEXT,
+    content_hash TEXT NOT NULL,
+    encrypted INTEGER DEFAULT 0,
+    parsed_text TEXT,
+    uploaded_by TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_files_account ON sync_files(account_id);
+CREATE INDEX IF NOT EXISTS idx_sync_files_hash ON sync_files(content_hash);
+CREATE INDEX IF NOT EXISTS idx_sync_files_source_type ON sync_files(source_type);
+CREATE INDEX IF NOT EXISTS idx_sync_files_source_path ON sync_files(source_path);
+
+-- File versioning
+CREATE TABLE IF NOT EXISTS file_versions (
+    id TEXT PRIMARY KEY,
+    file_id TEXT NOT NULL,
+    version_number INTEGER NOT NULL,
+    path TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    checksum TEXT NOT NULL,
+    created_by TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_file_versions_file ON file_versions(file_id);
+
+-- File access audit log
+CREATE TABLE IF NOT EXISTS file_audit_log (
+    id TEXT PRIMARY KEY,
+    file_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    action TEXT NOT NULL CHECK(action IN ('view', 'download', 'upload', 'delete', 'share', 'version_create')),
+    performed_by TEXT NOT NULL,
+    performed_by_type TEXT NOT NULL CHECK(performed_by_type IN ('user', 'agent', 'auditor')),
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_file_audit_log_file ON file_audit_log(file_id);
+CREATE INDEX IF NOT EXISTS idx_file_audit_log_date ON file_audit_log(created_at);
+
+-- Retention policies
+CREATE TABLE IF NOT EXISTS retention_policies (
+    id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    category TEXT NOT NULL,
+    retention_days INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Initial seed data for development
 INSERT OR IGNORE INTO accounts (id, name, domain) VALUES
     ('custcorp', 'CustCorp', 'custcorp.com'),
     ('tibstar', 'The Infinite Black', 'tibstar.com'),
-    ('hiveskill', 'HiveSkill', 'hiveskill.com');
+    ('hiveskill', 'HiveSkill', 'hiveskill.com'),
+    ('countsharp', 'CountSharp Financial', 'countsharp.com');
