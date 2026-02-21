@@ -53,12 +53,34 @@ function Dashboard({ user, accounts, onLogout }) {
         )}
 
         <div className="card" style={{ marginTop: '40px' }}>
-          <h3 style={{ marginBottom: '15px' }}>About DarkDrop</h3>
-          <p style={{ color: '#888', lineHeight: '1.6' }}>
-            DarkDrop is a multi-tenant file storage service designed for secure file
-            management across multiple brands and organizations. Upload, download, and
-            share files with team members and agents.
-          </p>
+          <h3 style={{ marginBottom: '15px' }}>Enterprise-Grade Security Features</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginTop: '20px' }}>
+
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '32px', marginBottom: '10px' }}>🔒</div>
+              <h4>Encrypted at Rest</h4>
+              <p style={{ color: '#888', fontSize: '14px' }}>
+                AES-256 encryption protects all files automatically
+              </p>
+            </div>
+
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '32px', marginBottom: '10px' }}>📚</div>
+              <h4>Version History</h4>
+              <p style={{ color: '#888', fontSize: '14px' }}>
+                Never lose work - all versions saved automatically
+              </p>
+            </div>
+
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '32px', marginBottom: '10px' }}>📋</div>
+              <h4>Complete Audit Trail</h4>
+              <p style={{ color: '#888', fontSize: '14px' }}>
+                Track every file access for compliance
+              </p>
+            </div>
+
+          </div>
         </div>
       </div>
     </div>

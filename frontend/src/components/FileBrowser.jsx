@@ -222,6 +222,16 @@ function FileBrowser({ user, accounts, token, onLogout }) {
               <>
                 <p style={{ fontSize: '48px', marginBottom: '10px' }}>+</p>
                 <p>Click to upload or drag and drop files here</p>
+                <div style={{
+                  marginTop: '15px',
+                  padding: '10px',
+                  background: '#1a3a1a',
+                  borderRadius: '5px',
+                  fontSize: '13px',
+                  color: '#4ade80'
+                }}>
+                  ✓ Encrypted automatically  ✓ Versions saved  ✓ Upload tracked
+                </div>
                 <p style={{ color: '#888', marginTop: '10px', fontSize: '14px' }}>
                   Max file size: 5GB
                 </p>

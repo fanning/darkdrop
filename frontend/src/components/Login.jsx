@@ -42,7 +42,7 @@ function Login({ onLogin }) {
               DarkDrop
             </h1>
             <p style={{ color: '#888', fontSize: '14px', margin: 0 }}>
-              Secure File Storage
+              Encrypted File Storage for Teams & AI Agents
             </p>
           </div>
 
