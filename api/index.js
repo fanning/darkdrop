@@ -133,6 +133,45 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', service: 'darkdrop-api' });
 });
 
+// Analytics: track page view
+app.post('/api/analytics/pageview', async (req, res) => {
+    try {
+        const { session_id, page_path, referrer } = req.body;
+
+        if (!session_id || !page_path) {
+            return res.status(400).json({ error: 'session_id and page_path required' });
+        }
+
+        // Get user ID from token if authenticated (optional)
+        let userId = null;
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.substring(7);
+            try {
+                const session = await db.getSessionByToken(token);
+                if (session) {
+                    userId = session.user_id;
+                }
+            } catch (e) {
+                // Not authenticated, that's fine for analytics
+            }
+        }
+
+        const pageviewId = crypto.randomUUID();
+        await db.run(
+            `INSERT INTO analytics_pageviews (id, session_id, page_path, referrer, user_agent, ip_address, user_id, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            [pageviewId, session_id, page_path, referrer || null, req.headers['user-agent'] || null, req.ip, userId]
+        );
+
+        res.status(201).json({ success: true, pageview_id: pageviewId });
+    } catch (error) {
+        console.error('Analytics tracking error:', error);
+        // Don't fail the request if analytics fails
+        res.status(200).json({ success: false, error: 'tracking failed' });
+    }
+});
+
 // Auth routes
 app.post('/auth/register', async (req, res) => {
     try {

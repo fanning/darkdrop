@@ -161,6 +161,21 @@ CREATE TABLE IF NOT EXISTS retention_policies (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Analytics: page view tracking
+CREATE TABLE IF NOT EXISTS analytics_pageviews (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    page_path TEXT NOT NULL,
+    referrer TEXT,
+    user_agent TEXT,
+    ip_address TEXT,
+    user_id TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_analytics_pageviews_session ON analytics_pageviews(session_id);
+CREATE INDEX IF NOT EXISTS idx_analytics_pageviews_created_at ON analytics_pageviews(created_at);
+
 -- Initial seed data for development
 INSERT OR IGNORE INTO accounts (id, name, domain) VALUES
     ('custcorp', 'CustCorp', 'custcorp.com'),
