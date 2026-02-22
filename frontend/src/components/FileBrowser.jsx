@@ -209,6 +209,7 @@ function FileBrowser({ user, accounts, token, onLogout }) {
             onDrop={handleDrop}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
+            data-action="upload"
           >
             <input
               ref={fileInputRef}

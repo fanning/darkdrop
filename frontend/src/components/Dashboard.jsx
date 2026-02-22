@@ -56,7 +56,7 @@ function Dashboard({ user, accounts, onLogout }) {
           <h3 style={{ marginBottom: '15px' }}>Enterprise-Grade Security Features</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginTop: '20px' }}>
 
-            <div style={{ textAlign: 'center' }}>
+            <div style={{ textAlign: 'center' }} data-feature="encryption">
               <div style={{ fontSize: '32px', marginBottom: '10px' }}>🔒</div>
               <h4>Encrypted at Rest</h4>
               <p style={{ color: '#888', fontSize: '14px' }}>
@@ -64,7 +64,7 @@ function Dashboard({ user, accounts, onLogout }) {
               </p>
             </div>
 
-            <div style={{ textAlign: 'center' }}>
+            <div style={{ textAlign: 'center' }} data-feature="version-history">
               <div style={{ fontSize: '32px', marginBottom: '10px' }}>📚</div>
               <h4>Version History</h4>
               <p style={{ color: '#888', fontSize: '14px' }}>
@@ -72,7 +72,7 @@ function Dashboard({ user, accounts, onLogout }) {
               </p>
             </div>
 
-            <div style={{ textAlign: 'center' }}>
+            <div style={{ textAlign: 'center' }} data-feature="audit-trail">
               <div style={{ fontSize: '32px', marginBottom: '10px' }}>📋</div>
               <h4>Complete Audit Trail</h4>
               <p style={{ color: '#888', fontSize: '14px' }}>
