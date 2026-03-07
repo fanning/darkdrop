@@ -172,6 +172,124 @@ app.post('/api/analytics/pageview', async (req, res) => {
     }
 });
 
+// Metrics endpoint - proxy to coordinator
+app.post('/metrics', async (req, res) => {
+    try {
+        const event = req.body;
+
+        // Validate required fields
+        if (!event.event || !event.sessionId) {
+            return res.status(400).json({ error: 'event and sessionId are required' });
+        }
+
+        // Forward to coordinator
+        const response = await fetch('http://localhost:3020/api/metrics', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(event)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Coordinator metrics error:', errorText);
+            return res.status(response.status).json({ error: 'Failed to forward metrics to coordinator' });
+        }
+
+        const result = await response.json();
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('Metrics proxy error:', error);
+        // Don't fail the request if metrics forwarding fails
+        res.status(200).json({ success: false, error: 'metrics forwarding failed' });
+    }
+});
+
+// User feedback endpoints
+app.post('/api/feedback', async (req, res) => {
+    try {
+        const {
+            sessionId,
+            rating,
+            experienceRating,
+            featureSatisfaction,
+            feedbackText,
+            improvementSuggestions,
+            wouldRecommend,
+            primaryUseCase,
+            painPoints
+        } = req.body;
+
+        if (!sessionId || !rating) {
+            return res.status(400).json({ error: 'sessionId and rating are required' });
+        }
+
+        // Get user ID from token if authenticated (optional)
+        let userId = null;
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.substring(7);
+            try {
+                const session = await db.getSessionByToken(token);
+                if (session) {
+                    userId = session.user_id;
+                }
+            } catch (e) {
+                // Not authenticated, that's fine for feedback
+            }
+        }
+
+        const feedbackId = crypto.randomUUID();
+        await db.createFeedback({
+            id: feedbackId,
+            sessionId,
+            userId,
+            rating,
+            experienceRating: experienceRating || null,
+            featureSatisfaction: featureSatisfaction || null,
+            feedbackText: feedbackText || null,
+            improvementSuggestions: improvementSuggestions || null,
+            wouldRecommend: wouldRecommend || null,
+            primaryUseCase: primaryUseCase || null,
+            painPoints: painPoints || null,
+            userAgent: req.headers['user-agent'] || null,
+            ipAddress: req.ip
+        });
+
+        console.log('[Feedback] New feedback submitted:', { feedbackId, sessionId, rating });
+
+        res.status(201).json({ success: true, feedback_id: feedbackId });
+    } catch (error) {
+        console.error('Feedback submission error:', error);
+        res.status(500).json({ error: 'Failed to submit feedback' });
+    }
+});
+
+// Get feedback statistics (admin endpoint)
+app.get('/api/feedback/stats', authenticateJWT, async (req, res) => {
+    try {
+        const stats = await db.getFeedbackStats();
+        res.json(stats);
+    } catch (error) {
+        console.error('Feedback stats error:', error);
+        res.status(500).json({ error: 'Failed to retrieve feedback stats' });
+    }
+});
+
+// Get all feedback (admin endpoint)
+app.get('/api/feedback', authenticateJWT, async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 100;
+        const offset = parseInt(req.query.offset) || 0;
+        const feedback = await db.getAllFeedback(limit, offset);
+        res.json({ feedback, limit, offset });
+    } catch (error) {
+        console.error('Feedback retrieval error:', error);
+        res.status(500).json({ error: 'Failed to retrieve feedback' });
+    }
+});
+
 // Auth routes
 app.post('/auth/register', async (req, res) => {
     try {
@@ -179,6 +297,19 @@ app.post('/auth/register', async (req, res) => {
 
         if (!email || !password || !name) {
             return res.status(400).json({ error: 'Email, password, and name required' });
+        }
+
+        // Waitlist gate: check with auth-service if this email is approved
+        try {
+            const waitlistCheck = await fetch('http://localhost:3007/api/auth/waitlist/check?email=' + encodeURIComponent(email), {
+                headers: { 'Origin': 'https://darkdrop.com' }
+            });
+            const waitlistData = await waitlistCheck.json();
+            if (waitlistData.gated && !waitlistData.approved) {
+                return res.status(403).json({ error: 'Registration is by invitation only.', waitlist_required: true });
+            }
+        } catch (waitlistErr) {
+            console.warn('[DarkDrop] Waitlist check failed, allowing registration:', waitlistErr.message);
         }
 
         // Check if user exists
